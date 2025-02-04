@@ -1,0 +1,34 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-ingestion
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-ingestion
+  template:
+    metadata:
+      labels:
+        app: data-ingestion
+    spec:
+      containers:
+      - name: data-ingestion
+        image: ingest:latest
+        ports:
+        - containerPort: 5000
+        env:
+        - name: KAFKA_BROKER
+          value: "kafka:9092"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-ingestion
+spec:
+  ports:
+  - port: 5000
+    targetPort: 5000
+  selector:
+    app: data-ingestion

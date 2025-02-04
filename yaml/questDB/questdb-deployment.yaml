@@ -1,0 +1,28 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: questdb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: questdb
+  template:
+    metadata:
+      labels:
+        app: questdb
+    spec:
+      containers:
+      - name: questdb
+        image: questdb/questdb:latest
+        ports:
+        - containerPort: 9000
+        - containerPort: 8812
+        volumeMounts:
+        - name: questdb-storage
+          mountPath: /var/lib/questdb
+      volumes:
+      - name: questdb-storage
+        persistentVolumeClaim:
+          claimName: questdb-pvc

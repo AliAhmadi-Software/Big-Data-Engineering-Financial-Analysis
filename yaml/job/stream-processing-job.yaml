@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: spark-stream-processing
+spec:
+  template:
+    spec:
+      containers:
+      - name: spark-driver
+        image: spark-hadoop:3.2.0
+        command: ["/opt/spark/bin/spark-submit"]
+        args: ["stream_processing.py"]
+        resources:
+          requests:
+            memory: "2g"
+            cpu: "1"
+          limits:
+            memory: "4g"
+            cpu: "2"
+      restartPolicy: OnFailure
