@@ -1,0 +1,182 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - questdb
+    env_file:
+      - .env
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://${KAFKA_BROKER}
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    command:
+      - sh
+      - -c
+      - |
+        /etc/confluent/docker/run &
+        while ! nc -z ${KAFKA_CONTAINER_NAME} 9092; do
+          sleep 1;
+        done;
+        kafka-topics --create --topic btcirt_topic --replication-factor 1 --if-not-exists --bootstrap-server ${KAFKA_CONTAINER_NAME}:9092;
+        kafka-topics --create --topic usdtirt_topic --replication-factor 1 --if-not-exists --bootstrap-server ${KAFKA_CONTAINER_NAME}:9092;
+        kafka-topics --create --topic ethirt_topic --replication-factor 1 --if-not-exists --bootstrap-server ${KAFKA_CONTAINER_NAME}:9092;
+        kafka-topics --create --topic etcirt_topic --replication-factor 1 --if-not-exists --bootstrap-server ${KAFKA_CONTAINER_NAME}:9092;
+        kafka-topics --create --topic shibirt_topic --replication-factor 1 --if-not-exists --bootstrap-server ${KAFKA_CONTAINER_NAME}:9092;
+        wait
+    networks:
+      - questdb
+    env_file:
+      - .env
+
+  # schema-registry:
+  #   image: confluentinc/cp-schema-registry:latest
+  #   container_name: schema-registry
+  #   depends_on:
+  #     - kafka
+  #   ports:
+  #     - "8081:8081"
+  #   environment:
+  #     SCHEMA_REGISTRY_HOST_NAME: schema-registry
+  #     SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL: zookeeper:2181
+  #     SCHEMA_REGISTRY_LISTENERS: "http://schema-registry:8081"
+  #     SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://${KAFKA_CONTAINER_NAME}:9092
+  #   networks:
+  #     - questdb
+  #   env_file:
+  #     - .env
+
+  data-ingestion:
+    build:
+      context: ./services/data-ingestion
+      dockerfile: Dockerfile
+    container_name: data-ingestion
+    depends_on:
+      - kafka
+    networks:
+      - questdb
+    env_file:
+      - .env
+
+  stream-processing:
+    build:
+      context: ./services/stream-processing
+      dockerfile: Dockerfile
+    container_name: stream-processing
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKER: ${KAFKA_CONTAINER_NAME}:9092
+    command: spark-submit --master local[*] --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.2 /app/consumer.py
+    networks:
+      - questdb
+    env_file:
+      - .env
+
+  questdb:
+    image: questdb/questdb:latest
+    container_name: questdb
+    ports:
+      - "9000:9000"  # HTTP / Web Console
+      - "8812:8812"  # Postgres wire
+    volumes:
+      - questdb-volume:/root/.questdb
+    networks:
+      - questdb
+    env_file:
+      - .env
+
+  questdb-init:
+    image: postgres:latest
+    depends_on:
+      - questdb
+    volumes:
+      - ./db/init_questdb.sql:/docker-entrypoint-initdb.d/init_questdb.sql:ro
+    environment:
+      PGPASSWORD: ${PGPASSWORD}
+    command: >
+      bash -c "
+        echo 'Waiting for QuestDB to be ready...';
+        until pg_isready -h ${QUESTDB_HOST} -p ${QUESTDB_PORT}; do
+          sleep 1;
+        done;
+        echo 'QuestDB is up, running init script...';
+        psql -h ${QUESTDB_HOST} -p ${QUESTDB_PORT} -U admin -d ${QUESTDB_DB} -f /docker-entrypoint-initdb.d/init_questdb.sql;
+        echo 'Initialization script executed successfully.';
+      "
+    networks:
+      - questdb
+    env_file:
+      - .env
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    restart: always
+    ports:
+      - 3000:3000
+    volumes:
+      - ./data/grafana:/var/lib/grafana/
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+    depends_on:
+      - questdb
+    networks:
+      - questdb
+    env_file:
+      - .env
+
+  aggregator_django:
+    build:
+      context: ./services/aggregator_django
+    container_name: aggregator_django
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./services/aggregator_django:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - questdb
+    networks:
+      - questdb
+    env_file:
+      - .env
+
+  kafka-to-questdb:
+    build:
+      context: ./services/kafka-to-questdb
+      dockerfile: Dockerfile
+    container_name: kafka-to-questdb
+    depends_on:
+      - kafka
+      - questdb
+    environment:
+      KAFKA_BROKER: ${KAFKA_CONTAINER_NAME}:9092
+      QUESTDB_HOST: ${QUESTDB_HOST}
+      QUESTDB_ILP_PORT: ${QUESTDB_ILP_PORT}
+    networks:
+      - questdb
+    env_file:
+      - .env
+
+volumes:
+  questdb-volume:
+
+networks:
+  questdb:
+    name: questdb
