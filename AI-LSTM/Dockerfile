@@ -22,8 +22,11 @@ RUN pip install notebook protobuf==3.20.* tensorflow==1.15 setuptools matplotlib
 # ایجاد دایرکتوری کاری
 WORKDIR /tf1_notebook
 
+# کپی فایل نوت‌بوک به داخل کانتینر
+COPY Final-Project-LSTM.ipynb /tf1_notebook/Final-Project-LSTM.ipynb
+
 # پورت Jupyter Notebook
 EXPOSE 8888
 
 # دستور اجرا
-CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--allow-root", "--no-browser"]
+CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
