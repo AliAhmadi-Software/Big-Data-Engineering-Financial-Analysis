@@ -22,8 +22,8 @@ RUN pip install notebook protobuf==3.20.* tensorflow==1.15 setuptools matplotlib
 # ایجاد دایرکتوری کاری
 WORKDIR /tf1_notebook
 
-# کپی فایل نوت‌بوک به داخل کانتینر
-COPY Final-Project-LSTM.ipynb /tf1_notebook/Final-Project-LSTM.ipynb
+# Copy all files and folders from the current directory on the host to the working directory inside the container
+COPY . /tf1_notebook
 
 # پورت Jupyter Notebook
 EXPOSE 8888
