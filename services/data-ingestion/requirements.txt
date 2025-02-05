@@ -1,0 +1,6 @@
+flask
+kafka-python
+psutil
+numpy
+requests
+pytz
