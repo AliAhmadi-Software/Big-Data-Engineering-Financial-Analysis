@@ -17,7 +17,7 @@ RUN apt-get update && \
 RUN curl https://bootstrap.pypa.io/pip/3.7/get-pip.py -o get-pip.py && python3.7 get-pip.py
 
 # نصب Jupyter Notebook و کتابخانه‌های مورد نیاز
-RUN pip install notebook protobuf==3.20.* tensorflow==1.15 setuptools matplotlib pandas numpy scikit-learn
+RUN pip install notebook protobuf==3.20.* tensorflow==1.15 setuptools matplotlib pandas numpy scikit-learn pandas-datareader
 
 # ایجاد دایرکتوری کاری
 WORKDIR /tf1_notebook
