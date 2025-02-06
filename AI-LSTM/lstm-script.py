@@ -1,90 +1,92 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+import matplotlib.pyplot as plt
 from keras.models import Sequential
-from keras.layers import Dense, LSTM, Dropout
-import yfinance as yf
+from keras.layers import LSTM, Dense, Dropout
 import time
+import datetime
+import yfinance as yf  # برای دانلود داده‌های به‌روز سهام
 
-# Fetch initial dataset
-def fetch_initial_data(ticker='AAPL'):
-    data = yf.download(ticker, start='2010-01-01', end='2023-01-01')
-    data = data[['Close']]
-    data.reset_index(drop=True, inplace=True)
-    return data
-
-# Preprocess data
-def preprocess_data(dataset):
-    training_set = dataset.iloc[:, 0:1].values
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    training_set_scaled = scaler.fit_transform(training_set)
-    
-    X_train = []
-    y_train = []
-    for i in range(60, len(training_set_scaled)):
-        X_train.append(training_set_scaled[i-60:i, 0])
-        y_train.append(training_set_scaled[i, 0])
-    X_train, y_train = np.array(X_train), np.array(y_train)
-    X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
-    return X_train, y_train, scaler
-
-# Build model
-def build_model():
+# تابعی برای ساخت مدل LSTM
+def build_lstm_model(input_shape):
     model = Sequential()
-    model.add(LSTM(units=50, return_sequences=True, input_shape=(60, 1)))
+    model.add(LSTM(units=50, return_sequences=True, input_shape=input_shape))
     model.add(Dropout(0.2))
-    model.add(LSTM(units=50, return_sequences=True))
+    model.add(LSTM(units=50, return_sequences=False))
     model.add(Dropout(0.2))
-    model.add(LSTM(units=50))
-    model.add(Dropout(0.2))
-    model.add(Dense(units=1))
+    model.add(Dense(units=1))  # پیش‌بینی قیمت بسته شدن
     model.compile(optimizer='adam', loss='mean_squared_error')
     return model
 
-# Train model
-def train_model(model, X_train, y_train):
-    model.fit(X_train, y_train, epochs=50, batch_size=32)
+# دانلود داده‌های جدید
+def fetch_stock_data(ticker, start_date, end_date):
+    data = yf.download(ticker, start=start_date, end=end_date)
+    data.columns = [col[0] for col in data.columns]  # حذف MultiIndex و ساده‌سازی ستون‌ها
+    return data[['Open', 'High', 'Low', 'Close']]
 
-# Fetch new data dynamically using yfinance
-def fetch_new_data(ticker='AAPL'):
-    new_data = yf.download(ticker, period='1d', interval='1m')
-    latest_price = new_data['Close'].iloc[-1]
-    return latest_price
+# آماده‌سازی داده‌ها
+def prepare_data(data, time_steps=60):
+    scaled_data = (data - data.min()) / (data.max() - data.min())  # نرمال‌سازی ساده
+    x_train, y_train = [], []
+    for i in range(time_steps, len(scaled_data) - 30):  # آخرین 30 روز برای پیش‌بینی آینده نگه داشته می‌شود
+        x_train.append(scaled_data.iloc[i-time_steps:i].values)
+        y_train.append(scaled_data.iloc[i]['Close'])
+    return np.array(x_train), np.array(y_train), scaled_data, data_min, data_max
 
-# Update data dynamically
-def update_and_plot(model, scaler, ticker='AAPL'):
-    plt.ion()  # Enable interactive mode
-    fig, ax = plt.subplots()
-    predictions = []
-    real_stock_prices = []
+# بازگرداندن داده‌ها به مقیاس اصلی
+def inverse_transform(predictions, data_min, data_max):
+    return predictions * (data_max['Close'] - data_min['Close']) + data_min['Close']
 
-    for _ in range(100):  # Simulate 100 new updates
-        new_price = fetch_new_data(ticker)
-        real_stock_prices.append(new_price)
-        
-        # Scale new data
-        scaled_new_price = scaler.transform([[new_price]])
-        recent_data = np.array(real_stock_prices[-60:] if len(real_stock_prices) >= 60 else [0] * (60 - len(real_stock_prices)) + real_stock_prices)
-        recent_data = scaler.transform(recent_data.reshape(-1, 1)).reshape(1, 60, 1)
-        
-        # Make prediction
-        predicted_price = model.predict(recent_data)[0][0]
-        predictions.append(predicted_price)
-        
-        # Plot updates
-        ax.clear()
-        ax.plot(real_stock_prices, color='blue', label='Real Stock Price')
-        ax.plot(scaler.inverse_transform(np.array(predictions).reshape(-1, 1)), color='red', label='Predicted Price')
-        ax.set_title('Stock Price Prediction')
-        ax.legend()
-        plt.draw()
-        plt.pause(1)  # Simulate delay (1 second per update)
+# پیش‌بینی داده‌های آینده
+def predict_future(model, recent_data, time_steps, future_days, data_min, data_max):
+    future_predictions = []
+    input_sequence = recent_data[-time_steps:].values.reshape(1, time_steps, 1)
+    for _ in range(future_days):
+        pred = model.predict(input_sequence)[0][0]
+        future_predictions.append(pred)
+        # اضافه کردن پیش‌بینی جدید به دنباله ورودی و حفظ سه بعدی بودن آن
+        pred_reshaped = np.array([[[pred]]])  # تبدیل به شکل (1, 1, 1)
+        input_sequence = np.append(input_sequence[:, 1:, :], pred_reshaped, axis=1)
+    return inverse_transform(np.array(future_predictions), data_min, data_max)
 
-# Main execution
-if __name__ == '__main__':
-    dataset = fetch_initial_data()
-    X_train, y_train, scaler = preprocess_data(dataset)
-    model = build_model()
-    train_model(model, X_train, y_train)
-    update_and_plot(model, scaler)
+# نمایش نمودار و به‌روزرسانی پویا
+def plot_dynamic_chart(actual_prices, future_predictions, dates, future_dates):
+    plt.figure(figsize=(10, 6))
+    plt.plot(dates, actual_prices, label='Historical Prices', color='blue')
+    plt.plot(future_dates, future_predictions, label='30-Day Forecast', linestyle='--', color='orange')
+    plt.xlabel('Date')
+    plt.ylabel('Stock Price')
+    plt.title('LSTM Stock Price Prediction')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+# حلقه اصلی اجرای روزانه
+if __name__ == "__main__":
+    ticker = 'AAPL'  # نماد سهام برای تحلیل
+    time_steps = 60  # تعداد روزهای ورودی به مدل
+    future_days = 30  # تعداد روزهای آینده برای پیش‌بینی
+
+    while True:
+        # تنظیم تاریخ‌های شروع و پایان
+        end_date = datetime.datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.datetime.now() - datetime.timedelta(days=365)).strftime('%Y-%m-%d')
+
+        # گرفتن داده‌های جدید و آماده‌سازی آنها
+        stock_data = fetch_stock_data(ticker, start_date, end_date)
+        x_train, y_train, scaled_data, data_min, data_max = prepare_data(stock_data[['Close']].reset_index(drop=True), time_steps)
+
+        # ساخت مدل و آموزش آن
+        model = build_lstm_model((x_train.shape[1], 1))
+        model.fit(x_train, y_train, epochs=50, batch_size=32, verbose=1)  # افزایش تعداد epochs
+
+        # پیش‌بینی آینده
+        future_dates = pd.date_range(stock_data.index[-1], periods=future_days + 1, freq='B')[1:]
+        future_predictions = predict_future(model, scaled_data, time_steps, future_days, data_min, data_max)
+
+        # نمایش نمودار
+        plot_dynamic_chart(stock_data['Close'].values, future_predictions, stock_data.index, future_dates)
+
+        # اجرای کد هر 24 ساعت
+        print("Waiting for the next update...")
+        time.sleep(86400)  # معادل یک روز
