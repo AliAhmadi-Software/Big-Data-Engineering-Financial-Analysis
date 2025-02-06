@@ -28,11 +28,15 @@ def fetch_stock_data(ticker, start_date, end_date):
 
 # آماده‌سازی داده‌ها
 def prepare_data(data, time_steps=60):
-    scaled_data = (data - data.min()) / (data.max() - data.min())  # نرمال‌سازی ساده
+    data_min = data.min()
+    data_max = data.max()
+    scaled_data = (data - data_min) / (data_max - data_min)  # نرمال‌سازی داده‌ها
     x_train, y_train = [], []
+
     for i in range(time_steps, len(scaled_data) - 30):  # آخرین 30 روز برای پیش‌بینی آینده نگه داشته می‌شود
         x_train.append(scaled_data.iloc[i-time_steps:i].values)
         y_train.append(scaled_data.iloc[i]['Close'])
+    
     return np.array(x_train), np.array(y_train), scaled_data, data_min, data_max
 
 # بازگرداندن داده‌ها به مقیاس اصلی
