@@ -40,23 +40,31 @@ services:
         kafka-topics --create --topic etcirt_topic --replication-factor 1 --if-not-exists --bootstrap-server ${KAFKA_CONTAINER_NAME}:9092;
         kafka-topics --create --topic shibirt_topic --replication-factor 1 --if-not-exists --bootstrap-server ${KAFKA_CONTAINER_NAME}:9092;
         wait
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     networks:
       - questdb
     env_file:
       - .env
 
+  # Uncomment and use the snippet below if/when you need schema-registry
+  #
   # schema-registry:
   #   image: confluentinc/cp-schema-registry:latest
   #   container_name: schema-registry
   #   depends_on:
-  #     - kafka
+  #     kafka:
+  #       condition: service_healthy
+  #   environment:
+  #     SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+  #     SCHEMA_REGISTRY_HOST_NAME: schema-registry
+  #     SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
   #   ports:
   #     - "8081:8081"
-  #   environment:
-  #     SCHEMA_REGISTRY_HOST_NAME: schema-registry
-  #     SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL: zookeeper:2181
-  #     SCHEMA_REGISTRY_LISTENERS: "http://schema-registry:8081"
-  #     SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://${KAFKA_CONTAINER_NAME}:9092
   #   networks:
   #     - questdb
   #   env_file:
@@ -68,7 +76,8 @@ services:
       dockerfile: Dockerfile
     container_name: data-ingestion
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     networks:
       - questdb
     env_file:
@@ -80,7 +89,8 @@ services:
       dockerfile: Dockerfile
     container_name: stream-processing
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     environment:
       KAFKA_BROKER: ${KAFKA_CONTAINER_NAME}:9092
     command: spark-submit --master local[*] --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.2 /app/consumer.py
@@ -130,7 +140,7 @@ services:
     container_name: grafana
     restart: always
     ports:
-      - 3000:3000
+      - "3000:3000"
     volumes:
       - ./data/grafana:/var/lib/grafana/
       - ./grafana/provisioning/:/etc/grafana/provisioning/
@@ -163,8 +173,10 @@ services:
       dockerfile: Dockerfile
     container_name: kafka-to-questdb
     depends_on:
-      - kafka
-      - questdb
+      kafka:
+        condition: service_healthy
+      questdb:
+        condition: service_started
     environment:
       KAFKA_BROKER: ${KAFKA_CONTAINER_NAME}:9092
       QUESTDB_HOST: ${QUESTDB_HOST}
