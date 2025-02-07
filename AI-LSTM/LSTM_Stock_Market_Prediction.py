@@ -6,8 +6,6 @@ from keras.layers import LSTM, Dense, Dropout
 import time
 import datetime
 import yfinance as yf  # برای دانلود داده‌های به‌روز سهام
-import argparse
-import os
 
 # تابعی برای ساخت مدل LSTM
 def build_lstm_model(input_shape):
@@ -67,17 +65,9 @@ def plot_dynamic_chart(actual_prices, future_predictions, dates, future_dates):
     plt.grid(True)
     plt.show()
 
-# گرفتن نماد سهام از آرگومان خط فرمان یا متغیر محیطی
-def get_stock_symbol():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--symbol', default=os.getenv('STOCK_SYMBOL', 'AAPL'))
-    args = parser.parse_args()
-    return args.symbol
-
 # حلقه اصلی اجرای روزانه
 if __name__ == "__main__":
-    ticker = get_stock_symbol()
-    print(f"Running LSTM model for stock symbol: {ticker}")
+    ticker = 'AAPL'  # نماد سهام برای تحلیل
     time_steps = 60  # تعداد روزهای ورودی به مدل
     future_days = 30  # تعداد روزهای آینده برای پیش‌بینی
 

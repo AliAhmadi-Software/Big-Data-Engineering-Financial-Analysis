@@ -1,6 +1,0 @@
-pandas
-numpy
-matplotlib
-yfinance
-keras
-tensorflow
